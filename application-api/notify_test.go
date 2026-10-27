@@ -13,6 +13,7 @@ import (
 	"net/mail"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -28,15 +29,15 @@ var sampleApp = appmail.Application{
 	ReceivedAt: time.Date(2026, 10, 28, 11, 5, 0, 0, time.UTC),
 }
 
-func TestTelegramText(t *testing.T) {
-	text := telegramText(sampleApp)
+func TestTelegramHTML(t *testing.T) {
+	text := telegramHTML(sampleApp)
 	for _, want := range []string{
-		"№ A-261028-3f9a1c",
-		"Программа: Криптовалюта и виртуальные активы (Флагманский курс)",
-		"Имя: Анна Комарова",
-		"Телефон: +7 (900) 123-45-67",
-		"Почта: anna@mail.ru",
-		"Получена: 28.10.2026 14:05 МСК",
+		"🆕 <b>Новая заявка</b>  ·  A-261028-3f9a1c",
+		"📚 <b>Криптовалюта и виртуальные активы</b>\nФлагманский курс · " + appmail.FormatPrice(30000),
+		"👤 Анна Комарова",
+		"📞 <code>+7 (900) 123-45-67</code>",
+		"✉️ anna@mail.ru",
+		"🕒 28 октября 2026, 14:05 МСК",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("нет %q в:\n%s", want, text)
@@ -45,41 +46,124 @@ func TestTelegramText(t *testing.T) {
 
 	app := sampleApp
 	app.CourseID = "new-course"
-	if !strings.Contains(telegramText(app), "Программа: new-course") {
+	if !strings.Contains(telegramHTML(app), "📚 <b>new-course</b>") {
 		t.Error("неизвестная программа должна выводиться по id")
 	}
 }
 
-func TestTelegramNotify(t *testing.T) {
-	var got map[string]any
-	var path string
-	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		path = r.URL.Path
-		_ = json.NewDecoder(r.Body).Decode(&got)
-		if got["chat_id"] == "bad" {
-			w.WriteHeader(http.StatusBadRequest)
-			_, _ = io.WriteString(w, `{"ok":false,"description":"Bad Request: chat not found"}`)
-			return
+func TestTelegramHTMLEscapesInput(t *testing.T) {
+	app := sampleApp
+	app.Name = `<b>Взлом</b> & "кавычки"`
+	text := telegramHTML(app)
+	if strings.Contains(text, "<b>Взлом</b>") {
+		t.Errorf("ввод пользователя не экранирован:\n%s", text)
+	}
+	if !strings.Contains(text, "&lt;b&gt;Взлом&lt;/b&gt; &amp; &#34;кавычки&#34;") {
+		t.Errorf("неожиданное экранирование:\n%s", text)
+	}
+}
+
+func TestInternationalDigits(t *testing.T) {
+	for in, want := range map[string]string{
+		"+7 (900) 123-45-67": "79001234567",
+		"8 900 123-45-67":    "79001234567",
+		"(900) 123-45-67":    "79001234567",
+		"+375 29 123-45-67":  "375291234567",
+		"+44 20 7946 0958":   "442079460958",
+		"123-45-67":          "",
+		"+1 234 567 890":     "", // 10 цифр с «+» — код страны неизвестен, не гадаем
+	} {
+		if got := internationalDigits(in); got != want {
+			t.Errorf("internationalDigits(%q) = %q, want %q", in, got, want)
 		}
-		_, _ = io.WriteString(w, `{"ok":true,"result":{}}`)
+	}
+}
+
+func TestContactButtons(t *testing.T) {
+	kb := contactButtons("8 (900) 123-45-67")
+	if kb == nil || len(kb.InlineKeyboard) != 1 || len(kb.InlineKeyboard[0]) != 2 {
+		t.Fatalf("кнопки: %+v", kb)
+	}
+	if kb.InlineKeyboard[0][0].URL != "https://wa.me/79001234567" || kb.InlineKeyboard[0][1].URL != "https://t.me/+79001234567" {
+		t.Errorf("ссылки: %+v", kb.InlineKeyboard[0])
+	}
+	if contactButtons("123") != nil {
+		t.Error("для неразобранного номера кнопок быть не должно")
+	}
+}
+
+// fakeTelegram — поддельный Bot API: запоминает запросы и отвечает тем,
+// что вернёт reply.
+func fakeTelegram(t *testing.T, reply func(msg telegramMessage) (status int, body string)) (*httptest.Server, *[]telegramMessage, *string) {
+	t.Helper()
+	var (
+		mu   sync.Mutex
+		got  []telegramMessage
+		path string
+	)
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var msg telegramMessage
+		_ = json.NewDecoder(r.Body).Decode(&msg)
+		mu.Lock()
+		got, path = append(got, msg), r.URL.Path
+		mu.Unlock()
+		status, body := reply(msg)
+		w.WriteHeader(status)
+		_, _ = io.WriteString(w, body)
 	}))
-	defer api.Close()
+	t.Cleanup(api.Close)
+	return api, &got, &path
+}
+
+func TestTelegramNotify(t *testing.T) {
+	api, got, path := fakeTelegram(t, func(msg telegramMessage) (int, string) {
+		if msg.ChatID == "bad" {
+			return http.StatusBadRequest, `{"ok":false,"description":"Bad Request: chat not found"}`
+		}
+		return http.StatusOK, `{"ok":true,"result":{}}`
+	})
 
 	tg := newTelegramNotifier(telegramConfig{BotToken: "123:SECRET", ChatID: "-100500", APIBase: api.URL})
 	if err := tg.Notify(context.Background(), sampleApp); err != nil {
 		t.Fatal(err)
 	}
-	if path != "/bot123:SECRET/sendMessage" {
-		t.Errorf("path = %q", path)
+	if *path != "/bot123:SECRET/sendMessage" {
+		t.Errorf("path = %q", *path)
 	}
-	if got["chat_id"] != "-100500" || !strings.Contains(got["text"].(string), "Анна Комарова") {
-		t.Errorf("тело запроса: %v", got)
+	msg := (*got)[0]
+	if msg.ChatID != "-100500" || msg.ParseMode != "HTML" || !strings.Contains(msg.Text, "Анна Комарова") {
+		t.Errorf("запрос: %+v", msg)
+	}
+	if msg.ReplyMarkup == nil || msg.ReplyMarkup.InlineKeyboard[0][0].URL != "https://wa.me/79001234567" {
+		t.Errorf("кнопки: %+v", msg.ReplyMarkup)
 	}
 
 	tg.cfg.ChatID = "bad"
 	err := tg.Notify(context.Background(), sampleApp)
 	if err == nil || !strings.Contains(err.Error(), "chat not found") {
 		t.Errorf("ошибка API: %v", err)
+	}
+}
+
+func TestTelegramFallsBackToPlainText(t *testing.T) {
+	// Telegram отвергает оформление — заявка всё равно уходит простым текстом
+	api, got, _ := fakeTelegram(t, func(msg telegramMessage) (int, string) {
+		if msg.ParseMode == "HTML" {
+			return http.StatusBadRequest, `{"ok":false,"description":"Bad Request: can't parse entities"}`
+		}
+		return http.StatusOK, `{"ok":true,"result":{}}`
+	})
+
+	tg := newTelegramNotifier(telegramConfig{BotToken: "1:x", ChatID: "1", APIBase: api.URL})
+	if err := tg.Notify(context.Background(), sampleApp); err != nil {
+		t.Fatalf("запасной вариант не сработал: %v", err)
+	}
+	if len(*got) != 2 {
+		t.Fatalf("запросов %d, want 2", len(*got))
+	}
+	plain := (*got)[1]
+	if plain.ParseMode != "" || plain.ReplyMarkup != nil || !strings.Contains(plain.Text, "Имя: Анна Комарова") {
+		t.Errorf("запасное сообщение: %+v", plain)
 	}
 }
 

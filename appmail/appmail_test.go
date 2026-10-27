@@ -85,8 +85,8 @@ func TestRenderUnknownCourseAndNoID(t *testing.T) {
 func TestFormatPrice(t *testing.T) {
 	cases := map[int]string{900: "900 ₽", 15000: "15 000 ₽", 1250000: "1 250 000 ₽"}
 	for in, want := range cases {
-		if got := formatPrice(in); got != want {
-			t.Errorf("formatPrice(%d) = %q, want %q", in, got, want)
+		if got := FormatPrice(in); got != want {
+			t.Errorf("FormatPrice(%d) = %q, want %q", in, got, want)
 		}
 	}
 }

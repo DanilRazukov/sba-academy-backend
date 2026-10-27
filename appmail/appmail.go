@@ -117,7 +117,7 @@ func newView(app Application) view {
 
 	title, meta := app.CourseID, ""
 	if c, ok := Courses[app.CourseID]; ok {
-		title, meta = c.Title, c.Kind+" · "+formatPrice(c.Price)
+		title, meta = c.Title, c.Kind+" · "+FormatPrice(c.Price)
 	}
 
 	return view{
@@ -127,7 +127,7 @@ func newView(app Application) view {
 		Email:       email,
 		CourseTitle: title,
 		CourseMeta:  meta,
-		ReceivedAt:  formatTime(app.ReceivedAt),
+		ReceivedAt:  FormatTime(app.ReceivedAt),
 		Preheader:   fmt.Sprintf("%s, %s — свяжитесь в рабочее время", name, phone),
 		PhoneHref:   htmltemplate.URL("tel:" + phoneDigits(phone)),
 		EmailHref: htmltemplate.URL("mailto:" + url.PathEscape(email) +
@@ -146,8 +146,9 @@ func phoneDigits(phone string) string {
 	return b.String()
 }
 
-// formatPrice — «30 000 ₽» с неразрывными пробелами, как на сайте.
-func formatPrice(rub int) string {
+// FormatPrice — «30 000 ₽» с неразрывными пробелами, как на сайте.
+// Экспортирован для других каналов уведомлений (Telegram).
+func FormatPrice(rub int) string {
 	s := strconv.Itoa(rub)
 	var b strings.Builder
 	for i, r := range s {
@@ -159,7 +160,8 @@ func formatPrice(rub int) string {
 	return b.String() + " ₽"
 }
 
-func formatTime(t time.Time) string {
+// FormatTime — «28 октября 2026, 14:05 МСК»; нулевое время — текущее.
+func FormatTime(t time.Time) string {
 	if t.IsZero() {
 		t = time.Now()
 	}

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -48,12 +49,59 @@ func newTelegramNotifier(cfg telegramConfig) *telegramNotifier {
 
 func (t *telegramNotifier) Name() string { return "telegram" }
 
+// telegramMessage — тело sendMessage.
+type telegramMessage struct {
+	ChatID                string          `json:"chat_id"`
+	Text                  string          `json:"text"`
+	ParseMode             string          `json:"parse_mode,omitempty"`
+	DisableWebPagePreview bool            `json:"disable_web_page_preview"`
+	ReplyMarkup           *inlineKeyboard `json:"reply_markup,omitempty"`
+}
+
+type inlineKeyboard struct {
+	InlineKeyboard [][]inlineButton `json:"inline_keyboard"`
+}
+
+type inlineButton struct {
+	Text string `json:"text"`
+	URL  string `json:"url"`
+}
+
+// telegramAPIError — Telegram ответил ok:false.
+type telegramAPIError struct {
+	Status      int
+	Description string
+}
+
+func (e *telegramAPIError) Error() string {
+	return fmt.Sprintf("telegram: HTTP %d: %s", e.Status, e.Description)
+}
+
 func (t *telegramNotifier) Notify(ctx context.Context, app appmail.Application) error {
-	body, err := json.Marshal(map[string]any{
-		"chat_id":                  t.cfg.ChatID,
-		"text":                     telegramText(app),
-		"disable_web_page_preview": true,
+	err := t.send(ctx, telegramMessage{
+		ChatID:                t.cfg.ChatID,
+		Text:                  telegramHTML(app),
+		ParseMode:             "HTML",
+		DisableWebPagePreview: true,
+		ReplyMarkup:           contactButtons(app.Phone),
 	})
+
+	// Оформление Telegram может отвергнуть (400: «can't parse entities»,
+	// «wrong HTTP URL» у кнопки). Доставить заявку важнее, чем украсить, —
+	// повторяем обычным текстом без кнопок.
+	var apiErr *telegramAPIError
+	if errors.As(err, &apiErr) && apiErr.Status == http.StatusBadRequest {
+		return t.send(ctx, telegramMessage{
+			ChatID:                t.cfg.ChatID,
+			Text:                  telegramPlainText(app),
+			DisableWebPagePreview: true,
+		})
+	}
+	return err
+}
+
+func (t *telegramNotifier) send(ctx context.Context, msg telegramMessage) error {
+	body, err := json.Marshal(msg)
 	if err != nil {
 		return err
 	}
@@ -84,15 +132,36 @@ func (t *telegramNotifier) Notify(ctx context.Context, app appmail.Application) 
 		return fmt.Errorf("telegram: HTTP %d, ответ не разобран: %w", resp.StatusCode, err)
 	}
 	if !result.OK {
-		return fmt.Errorf("telegram: HTTP %d: %s", resp.StatusCode, result.Description)
+		return &telegramAPIError{Status: resp.StatusCode, Description: result.Description}
 	}
 	return nil
 }
 
-// telegramText — короткое уведомление обычным текстом (без parse_mode —
-// экранировать ввод пользователя не нужно). Телефон и почту Telegram сам
-// делает кликабельными.
-func telegramText(app appmail.Application) string {
+// telegramHTML — карточка заявки (parse_mode HTML). Всё, что ввёл
+// пользователь, экранируется. Телефон — моноширинный: копируется в один тап.
+func telegramHTML(app appmail.Application) string {
+	e := html.EscapeString
+	var b strings.Builder
+
+	b.WriteString("🆕 <b>Новая заявка</b>")
+	if app.ID != "" {
+		b.WriteString("  ·  " + e(app.ID))
+	}
+	b.WriteString("\n\n")
+	if c, ok := appmail.Courses[app.CourseID]; ok {
+		b.WriteString("📚 <b>" + e(c.Title) + "</b>\n" + e(c.Kind) + " · " + appmail.FormatPrice(c.Price))
+	} else {
+		b.WriteString("📚 <b>" + e(app.CourseID) + "</b>")
+	}
+	b.WriteString("\n\n👤 " + e(app.Name))
+	b.WriteString("\n📞 <code>" + e(app.Phone) + "</code>")
+	b.WriteString("\n✉️ " + e(app.Email))
+	b.WriteString("\n\n🕒 " + appmail.FormatTime(app.ReceivedAt))
+	return b.String()
+}
+
+// telegramPlainText — запасной вид без разметки, если HTML отвергнут.
+func telegramPlainText(app appmail.Application) string {
 	course := app.CourseID
 	if c, ok := appmail.Courses[app.CourseID]; ok {
 		course = c.Title + " (" + c.Kind + ")"
@@ -107,8 +176,48 @@ func telegramText(app appmail.Application) string {
 	b.WriteString("\nИмя: " + app.Name)
 	b.WriteString("\nТелефон: " + app.Phone)
 	b.WriteString("\nПочта: " + app.Email)
-	b.WriteString("\nПолучена: " + app.ReceivedAt.In(moscow).Format("02.01.2006 15:04") + " МСК")
+	b.WriteString("\nПолучена: " + appmail.FormatTime(app.ReceivedAt))
 	return b.String()
+}
+
+// contactButtons — кнопки «написать клиенту» в WhatsApp и Telegram.
+// «Позвонить» сделать нельзя: Telegram не принимает в кнопках ссылки tel:.
+// Номер, который не получается привести к международному виду, — без кнопок.
+func contactButtons(phone string) *inlineKeyboard {
+	digits := internationalDigits(phone)
+	if digits == "" {
+		return nil
+	}
+	return &inlineKeyboard{InlineKeyboard: [][]inlineButton{{
+		{Text: "💬 WhatsApp", URL: "https://wa.me/" + digits},
+		{Text: "✈️ Telegram", URL: "https://t.me/+" + digits},
+	}}}
+}
+
+// internationalDigits — номер цифрами в международном формате без «+»:
+// «+7 (900) 123-45-67» → «79001234567». Российские номера без кода страны
+// дописываем: «8 900 …» и «900 …» → «7900…». Пустая строка — номер не разобран.
+func internationalDigits(phone string) string {
+	var b strings.Builder
+	for _, r := range phone {
+		if r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		}
+	}
+	digits := b.String()
+
+	if !strings.HasPrefix(strings.TrimSpace(phone), "+") {
+		switch {
+		case len(digits) == 11 && digits[0] == '8':
+			digits = "7" + digits[1:]
+		case len(digits) == 10:
+			digits = "7" + digits
+		}
+	}
+	if len(digits) < 11 || len(digits) > 15 {
+		return ""
+	}
+	return digits
 }
 
 // ---------- Resend (почта по HTTP API) ----------
