@@ -21,6 +21,7 @@ type config struct {
 
 	Telegram telegramConfig
 	SMTP     smtpConfig
+	Resend   resendConfig
 }
 
 type telegramConfig struct {
@@ -46,8 +47,26 @@ type smtpConfig struct {
 
 func (c smtpConfig) enabled() bool { return c.Host != "" }
 
-// smtpSenderName — имя отправителя в письмах менеджерам.
-const smtpSenderName = "SBA Academy"
+// resendConfig — почта через HTTP API Resend: работает там, где исходящий
+// SMTP закрыт (например, бесплатный Render).
+type resendConfig struct {
+	APIKey  string
+	APIBase string
+	// From — «SBA Academy <RESEND_FROM>». Без своего домена в Resend
+	// отправлять можно только с onboarding@resend.dev и только на адрес
+	// владельца аккаунта.
+	From string
+	// To — получатели заявок (менеджеры).
+	To []string
+}
+
+func (c resendConfig) enabled() bool { return c.APIKey != "" }
+
+// resendTestSender — отправитель Resend для аккаунта без подтверждённого домена.
+const resendTestSender = "onboarding@resend.dev"
+
+// senderName — имя отправителя в письмах менеджерам.
+const senderName = "SBA Academy"
 
 func loadConfig(getenv func(string) string) (config, error) {
 	cfg := config{
@@ -63,6 +82,11 @@ func loadConfig(getenv func(string) string) (config, error) {
 			Username: strings.TrimSpace(getenv("SMTP_USERNAME")),
 			Password: getenv("SMTP_PASSWORD"),
 			To:       splitList(getenv("SMTP_TO")),
+		},
+		Resend: resendConfig{
+			APIKey:  strings.TrimSpace(getenv("RESEND_API_KEY")),
+			APIBase: valueOr(getenv("RESEND_API_BASE"), "https://api.resend.com"),
+			To:      splitList(getenv("RESEND_TO")),
 		},
 	}
 
@@ -94,23 +118,40 @@ func loadConfig(getenv func(string) string) (config, error) {
 		if addr, err := mail.ParseAddress(cfg.SMTP.Username); err != nil || addr.Address != cfg.SMTP.Username {
 			errs = append(errs, errors.New("SMTP_USERNAME: нужен адрес почты, например noreply@academysba.pro"))
 		} else {
-			cfg.SMTP.From = (&mail.Address{Name: smtpSenderName, Address: addr.Address}).String()
+			cfg.SMTP.From = (&mail.Address{Name: senderName, Address: addr.Address}).String()
 		}
-		if len(cfg.SMTP.To) == 0 {
-			errs = append(errs, errors.New("SMTP_TO: нужен хотя бы один получатель"))
-		}
-		for _, to := range cfg.SMTP.To {
-			if _, err := mail.ParseAddress(to); err != nil {
-				errs = append(errs, fmt.Errorf("SMTP_TO %q: %w", to, err))
-			}
-		}
+		errs = append(errs, checkRecipients("SMTP_TO", cfg.SMTP.To)...)
 	}
 
-	if !cfg.Telegram.enabled() && !cfg.SMTP.enabled() {
-		errs = append(errs, errors.New("не настроен ни один канал: задайте TELEGRAM_* и/или SMTP_*"))
+	if cfg.Resend.enabled() {
+		from := valueOr(getenv("RESEND_FROM"), resendTestSender)
+		if addr, err := mail.ParseAddress(from); err != nil || addr.Address != from {
+			errs = append(errs, errors.New("RESEND_FROM: нужен адрес на домене, подтверждённом в Resend"))
+		} else {
+			cfg.Resend.From = (&mail.Address{Name: senderName, Address: addr.Address}).String()
+		}
+		errs = append(errs, checkRecipients("RESEND_TO", cfg.Resend.To)...)
+	}
+
+	if !cfg.Telegram.enabled() && !cfg.SMTP.enabled() && !cfg.Resend.enabled() {
+		errs = append(errs, errors.New("не настроен ни один канал: задайте TELEGRAM_*, SMTP_* и/или RESEND_*"))
 	}
 
 	return cfg, errors.Join(errs...)
+}
+
+// checkRecipients — хотя бы один получатель, и все — корректные адреса.
+func checkRecipients(name string, to []string) []error {
+	if len(to) == 0 {
+		return []error{fmt.Errorf("%s: нужен хотя бы один получатель", name)}
+	}
+	var errs []error
+	for _, a := range to {
+		if _, err := mail.ParseAddress(a); err != nil {
+			errs = append(errs, fmt.Errorf("%s %q: %w", name, a, err))
+		}
+	}
+	return errs
 }
 
 func valueOr(v, fallback string) string {

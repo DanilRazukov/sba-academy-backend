@@ -37,6 +37,38 @@ func TestLoadConfig(t *testing.T) {
 	}
 }
 
+func TestLoadConfigResend(t *testing.T) {
+	// без RESEND_FROM — тестовый отправитель Resend
+	cfg, err := loadConfig(env(map[string]string{
+		"ALLOWED_ORIGINS": "*",
+		"RESEND_API_KEY":  "re_123",
+		"RESEND_TO":       "monk@gmail.com",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Resend.enabled() || cfg.Resend.APIBase != "https://api.resend.com" || len(cfg.Resend.To) != 1 {
+		t.Errorf("resend: %+v", cfg.Resend)
+	}
+	if cfg.Resend.From != `"SBA Academy" <onboarding@resend.dev>` {
+		t.Errorf("From по умолчанию = %q", cfg.Resend.From)
+	}
+
+	// свой домен
+	cfg, err = loadConfig(env(map[string]string{
+		"ALLOWED_ORIGINS": "*",
+		"RESEND_API_KEY":  "re_123",
+		"RESEND_FROM":     "noreply@academysba.pro",
+		"RESEND_TO":       "manager@academysba.pro",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Resend.From != `"SBA Academy" <noreply@academysba.pro>` {
+		t.Errorf("From = %q", cfg.Resend.From)
+	}
+}
+
 func TestLoadConfigErrors(t *testing.T) {
 	tests := []struct {
 		name string
@@ -49,6 +81,8 @@ func TestLoadConfigErrors(t *testing.T) {
 		{"smtp без получателей", map[string]string{"ALLOWED_ORIGINS": "*", "SMTP_HOST": "h", "SMTP_USERNAME": "a@b.ru"}, "SMTP_TO"},
 		{"smtp без логина", map[string]string{"ALLOWED_ORIGINS": "*", "SMTP_HOST": "h", "SMTP_TO": "a@b.ru"}, "SMTP_USERNAME"},
 		{"логин не адрес", map[string]string{"ALLOWED_ORIGINS": "*", "SMTP_HOST": "h", "SMTP_USERNAME": "Boss <a@b.ru>", "SMTP_TO": "a@b.ru"}, "SMTP_USERNAME"},
+		{"resend без получателей", map[string]string{"ALLOWED_ORIGINS": "*", "RESEND_API_KEY": "re_k"}, "RESEND_TO"},
+		{"resend: отправитель не адрес", map[string]string{"ALLOWED_ORIGINS": "*", "RESEND_API_KEY": "re_k", "RESEND_FROM": "Boss <a@b.ru>", "RESEND_TO": "a@b.ru"}, "RESEND_FROM"},
 		{"плохое окно", map[string]string{"ALLOWED_ORIGINS": "*", "TELEGRAM_BOT_TOKEN": "t", "TELEGRAM_CHAT_ID": "1", "RATE_LIMIT_WINDOW": "soon"}, "RATE_LIMIT_WINDOW"},
 	}
 	for _, tt := range tests {

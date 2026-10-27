@@ -111,6 +111,77 @@ func telegramText(app appmail.Application) string {
 	return b.String()
 }
 
+// ---------- Resend (почта по HTTP API) ----------
+
+type resendNotifier struct {
+	cfg    resendConfig
+	client *http.Client
+}
+
+func newResendNotifier(cfg resendConfig) *resendNotifier {
+	return &resendNotifier{cfg: cfg, client: &http.Client{Timeout: 10 * time.Second}}
+}
+
+func (r *resendNotifier) Name() string { return "resend" }
+
+// resendEmail — тело POST /emails.
+type resendEmail struct {
+	From    string   `json:"from"`
+	To      []string `json:"to"`
+	ReplyTo string   `json:"reply_to,omitempty"`
+	Subject string   `json:"subject"`
+	HTML    string   `json:"html"`
+	Text    string   `json:"text"`
+}
+
+func (r *resendNotifier) Notify(ctx context.Context, app appmail.Application) error {
+	msg, err := appmail.Render(app)
+	if err != nil {
+		return fmt.Errorf("resend: %w", err)
+	}
+
+	email := resendEmail{
+		From:    r.cfg.From,
+		To:      r.cfg.To,
+		Subject: msg.Subject,
+		HTML:    msg.HTML,
+		Text:    msg.Text,
+	}
+	// Reply-To — клиент: ответ менеджера уйдёт ему
+	if replyTo, err := mail.ParseAddress(msg.ReplyTo); err == nil {
+		email.ReplyTo = replyTo.Address
+	}
+
+	body, err := json.Marshal(email)
+	if err != nil {
+		return fmt.Errorf("resend: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(r.cfg.APIBase, "/")+"/emails", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("resend: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+r.cfg.APIKey)
+
+	resp, err := r.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("resend: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode/100 == 2 {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
+		return nil
+	}
+	// ошибка API: {"statusCode":403,"name":"validation_error","message":"You can only send testing emails to your own email address…"}
+	var apiErr struct {
+		Name    string `json:"name"`
+		Message string `json:"message"`
+	}
+	_ = json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&apiErr)
+	return fmt.Errorf("resend: HTTP %d: %s: %s", resp.StatusCode, apiErr.Name, apiErr.Message)
+}
+
 // ---------- SMTP ----------
 
 type smtpNotifier struct {

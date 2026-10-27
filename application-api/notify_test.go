@@ -251,3 +251,57 @@ func TestSMTPNotify(t *testing.T) {
 		t.Errorf("письмо:\n%s", s.data)
 	}
 }
+
+func TestResendNotify(t *testing.T) {
+	var (
+		got  resendEmail
+		path string
+		auth string
+	)
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path, auth = r.URL.Path, r.Header.Get("Authorization")
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		if auth != "Bearer re_good" {
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = io.WriteString(w, `{"statusCode":401,"name":"validation_error","message":"API key is invalid"}`)
+			return
+		}
+		_, _ = io.WriteString(w, `{"id":"49a3999c-0ce1-4ea6-ab68-afcd6dc2e794"}`)
+	}))
+	defer api.Close()
+
+	r := newResendNotifier(resendConfig{
+		APIKey:  "re_good",
+		APIBase: api.URL,
+		From:    "SBA Academy <onboarding@resend.dev>",
+		To:      []string{"manager@academysba.pro", "boss@academysba.pro"},
+	})
+	if err := r.Notify(context.Background(), sampleApp); err != nil {
+		t.Fatal(err)
+	}
+
+	if path != "/emails" || auth != "Bearer re_good" {
+		t.Errorf("запрос: path=%q auth=%q", path, auth)
+	}
+	if got.From != "SBA Academy <onboarding@resend.dev>" {
+		t.Errorf("from = %q", got.From)
+	}
+	if len(got.To) != 2 || got.To[1] != "boss@academysba.pro" {
+		t.Errorf("to = %v", got.To)
+	}
+	if got.ReplyTo != "anna@mail.ru" {
+		t.Errorf("reply_to = %q", got.ReplyTo)
+	}
+	if !strings.Contains(got.Subject, "Анна Комарова") || !strings.Contains(got.HTML, "Анна Комарова") || !strings.Contains(got.Text, "Анна Комарова") {
+		t.Error("в письме нет данных заявки")
+	}
+
+	r.cfg.APIKey = "re_bad"
+	err := r.Notify(context.Background(), sampleApp)
+	if err == nil || !strings.Contains(err.Error(), "401") || !strings.Contains(err.Error(), "API key is invalid") {
+		t.Errorf("ошибка API: %v", err)
+	}
+	if strings.Contains(err.Error(), "re_bad") {
+		t.Errorf("ключ попал в ошибку: %v", err)
+	}
+}

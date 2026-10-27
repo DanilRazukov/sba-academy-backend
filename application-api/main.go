@@ -33,6 +33,9 @@ func main() {
 	if cfg.SMTP.enabled() {
 		notifiers = append(notifiers, &smtpNotifier{cfg: cfg.SMTP})
 	}
+	if cfg.Resend.enabled() {
+		notifiers = append(notifiers, newResendNotifier(cfg.Resend))
+	}
 
 	s := &server{
 		notifiers:   notifiers,
