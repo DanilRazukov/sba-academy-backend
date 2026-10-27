@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: test (${{ matrix.module }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [application-api, appmail]
+    defaults:
+      run:
+        working-directory: ${{ matrix.module }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ matrix.module }}/go.mod
+          # внешних зависимостей нет — кэшировать нечего
+          cache: false
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then echo "не отформатировано:"; echo "$unformatted"; exit 1; fi
+      - run: go vet ./...
+      - run: go test -race -count=1 ./...
+
+  # образ сервиса в GitHub Container Registry — только после зелёных тестов на main
+  image:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          # имя образа в ghcr — только строчными буквами
+          images: ghcr.io/danilrazukov/sba-academy-backend/application-api
+          tags: |
+            type=raw,value=latest
+            type=sha,format=short
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: application-api/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

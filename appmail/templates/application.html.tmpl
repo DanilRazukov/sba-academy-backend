@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="ru" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="x-apple-disable-message-reformatting">
+  <meta name="color-scheme" content="light">
+  <meta name="supported-color-schemes" content="light">
+  <title>Новая заявка: {{.CourseTitle}}</title>
+  <!--
+    Письмо менеджерам о заявке с сайта. Вёрстка под почтовые клиенты:
+    таблицы, стили в атрибутах, ширина 600, шрифты системные (Jost и Inter
+    в почте не грузятся). Цвета — из палитры сайта (src/app/styles/_colors.scss):
+    фон #F6F7F9, карточка #FFFFFF, линии #DFE2E8, navy #052C68,
+    красный акцент #C50105, текст #0A1A33, вторичный #59657A.
+  -->
+  <style>
+    @media (max-width: 620px) {
+      .container { width: 100% !important; }
+      .px { padding-left: 20px !important; padding-right: 20px !important; }
+      .stack { display: block !important; width: 100% !important; }
+      .stack-gap { padding: 0 0 12px 0 !important; }
+    }
+  </style>
+</head>
+<body style="margin:0; padding:0; background-color:#F6F7F9;">
+  <!-- строка-превью в списке писем -->
+  <div style="display:none; max-height:0; overflow:hidden; mso-hide:all; font-size:1px; line-height:1px; color:#F6F7F9;">
+    {{.Preheader}}
+  </div>
+
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F6F7F9;">
+    <tr>
+      <td align="center" style="padding:32px 12px;">
+        <table role="presentation" class="container" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px; max-width:600px; background-color:#FFFFFF; border:1px solid #DFE2E8;">
+
+          <!-- шапка: navy, название, красная черта как в логотипе -->
+          <tr>
+            <td class="px" style="padding:28px 40px; background-color:#052C68; font-family:Arial, Helvetica, sans-serif;">
+              <div style="font-size:20px; line-height:24px; font-weight:bold; letter-spacing:0.5px; color:#FFFFFF;">SBA&nbsp;Academy</div>
+              <div style="padding-top:4px; font-size:13px; line-height:18px; color:#A9B7CE;">Новая заявка с&nbsp;сайта{{if .ID}} · №&nbsp;{{.ID}}{{end}}</div>
+            </td>
+          </tr>
+          <tr>
+            <td style="height:4px; line-height:4px; font-size:0; background-color:#C50105;">&nbsp;</td>
+          </tr>
+
+          <!-- программа -->
+          <tr>
+            <td class="px" style="padding:32px 40px 8px; font-family:Arial, Helvetica, sans-serif;">
+              <div style="font-size:12px; line-height:16px; letter-spacing:0.8px; text-transform:uppercase; color:#59657A;">Программа</div>
+              <div style="padding-top:6px; font-size:22px; line-height:28px; color:#0A1A33;">{{.CourseTitle}}</div>
+              {{- if .CourseMeta}}
+              <div style="padding-top:4px; font-size:14px; line-height:20px; color:#59657A;">{{.CourseMeta}}</div>
+              {{- end}}
+            </td>
+          </tr>
+
+          <!-- контакты клиента -->
+          <tr>
+            <td class="px" style="padding:16px 40px 8px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-family:Arial, Helvetica, sans-serif;">
+                <tr>
+                  <td width="130" style="padding:14px 0; border-top:1px solid #DFE2E8; font-size:13px; line-height:20px; color:#59657A; vertical-align:top;">Имя</td>
+                  <td style="padding:14px 0; border-top:1px solid #DFE2E8; font-size:15px; line-height:20px; color:#0A1A33;">{{.Name}}</td>
+                </tr>
+                <tr>
+                  <td width="130" style="padding:14px 0; border-top:1px solid #DFE2E8; font-size:13px; line-height:20px; color:#59657A; vertical-align:top;">Телефон</td>
+                  <td style="padding:14px 0; border-top:1px solid #DFE2E8; font-size:15px; line-height:20px;"><a href="{{.PhoneHref}}" style="color:#052C68; text-decoration:none;">{{.Phone}}</a></td>
+                </tr>
+                <tr>
+                  <td width="130" style="padding:14px 0; border-top:1px solid #DFE2E8; font-size:13px; line-height:20px; color:#59657A; vertical-align:top;">Почта</td>
+                  <td style="padding:14px 0; border-top:1px solid #DFE2E8; font-size:15px; line-height:20px;"><a href="{{.EmailHref}}" style="color:#052C68; text-decoration:none;">{{.Email}}</a></td>
+                </tr>
+                <tr>
+                  <td width="130" style="padding:14px 0; border-top:1px solid #DFE2E8; border-bottom:1px solid #DFE2E8; font-size:13px; line-height:20px; color:#59657A; vertical-align:top;">Получена</td>
+                  <td style="padding:14px 0; border-top:1px solid #DFE2E8; border-bottom:1px solid #DFE2E8; font-size:15px; line-height:20px; color:#0A1A33;">{{.ReceivedAt}}</td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- действия: позвонить и написать (кнопки-таблицы — работают и в Outlook) -->
+          <tr>
+            <td class="px" style="padding:24px 40px 8px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td class="stack stack-gap" style="padding:0 12px 0 0;">
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                      <tr>
+                        <td style="background-color:#052C68; border:1px solid #052C68;">
+                          <a href="{{.PhoneHref}}" style="display:inline-block; padding:14px 26px; font-family:Arial, Helvetica, sans-serif; font-size:15px; line-height:20px; color:#FFFFFF; text-decoration:none;">Позвонить</a>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                  <td class="stack">
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                      <tr>
+                        <td style="border:1px solid #052C68;">
+                          <a href="{{.EmailHref}}" style="display:inline-block; padding:14px 26px; font-family:Arial, Helvetica, sans-serif; font-size:15px; line-height:20px; color:#052C68; text-decoration:none;">Написать на&nbsp;почту</a>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- подсказка менеджеру -->
+          <tr>
+            <td class="px" style="padding:20px 40px 32px; font-family:Arial, Helvetica, sans-serif; font-size:13px; line-height:20px; color:#59657A;">
+              На&nbsp;сайте обещано связаться в&nbsp;рабочее время. Ответ на&nbsp;это письмо уйдёт клиенту.
+            </td>
+          </tr>
+        </table>
+
+        <!-- подвал -->
+        <table role="presentation" class="container" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px; max-width:600px;">
+          <tr>
+            <td class="px" style="padding:16px 40px; font-family:Arial, Helvetica, sans-serif; font-size:12px; line-height:18px; color:#59657A;">
+              Письмо отправлено автоматически сайтом <a href="https://academysba.pro" style="color:#59657A;">academysba.pro</a>.
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

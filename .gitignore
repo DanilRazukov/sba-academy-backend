@@ -1,0 +1,13 @@
+# настройки с секретами — только локально; пример лежит в .env.example
+.env*
+!.env.example
+
+# бинарники после go build
+/application-api/application-api
+/application-api/application-api.exe
+
+# редакторы и ОС
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

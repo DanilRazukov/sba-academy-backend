@@ -1,0 +1,8 @@
+# секреты не должны попадать даже в промежуточные слои сборки
+**/.env*
+!**/.env.example
+
+.git
+.github
+**/application-api.exe
+/application-api/application-api
