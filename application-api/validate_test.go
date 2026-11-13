@@ -36,8 +36,11 @@ func TestValidateFields(t *testing.T) {
 		{"имя с дефиса", func(f *applicationFields) { f.Name = "-Анна" }, "name", "Имя может содержать только буквы, пробел и дефис"},
 		{"нет телефона", func(f *applicationFields) { f.Phone = "" }, "phone", "Укажите телефон"},
 		{"буквы в телефоне", func(f *applicationFields) { f.Phone = "+7 900 abc" }, "phone", "В номере могут быть только цифры, +, пробелы, скобки и дефис"},
-		{"мало цифр", func(f *applicationFields) { f.Phone = "123-45-67" }, "phone", "Проверьте номер: в нём должно быть от 10 до 15 цифр"},
-		{"много цифр", func(f *applicationFields) { f.Phone = "+1234567890123456" }, "phone", "Проверьте номер: в нём должно быть от 10 до 15 цифр"},
+		{"мало цифр", func(f *applicationFields) { f.Phone = "123-45-67" }, "phone", "Нужен российский номер: +7 и ещё 10 цифр"},
+		{"много цифр", func(f *applicationFields) { f.Phone = "+7 900 123-45-678" }, "phone", "Нужен российский номер: +7 и ещё 10 цифр"},
+		{"чужой код страны", func(f *applicationFields) { f.Phone = "+375 29 123-45-67" }, "phone", "Нужен российский номер: +7 и ещё 10 цифр"},
+		{"11 цифр не с 7 или 8", func(f *applicationFields) { f.Phone = "+1 900 123-45-67" }, "phone", "Нужен российский номер: +7 и ещё 10 цифр"},
+		{"недописанный номер из маски", func(f *applicationFields) { f.Phone = "+7 (900) 123-45-6" }, "phone", "Нужен российский номер: +7 и ещё 10 цифр"},
 		{"нет почты", func(f *applicationFields) { f.Email = "" }, "email", "Укажите электронную почту"},
 		{"почта без зоны", func(f *applicationFields) { f.Email = "anna@mail" }, "email", "Проверьте адрес: например, name@example.com"},
 		{"две @", func(f *applicationFields) { f.Email = "a@b@mail.ru" }, "email", "Проверьте адрес: например, name@example.com"},
@@ -76,6 +79,14 @@ func TestValidEmailAccepts(t *testing.T) {
 	} {
 		if !validEmail(email) {
 			t.Errorf("validEmail(%q) = false", email)
+		}
+	}
+}
+
+func TestRussianPhoneAccepts(t *testing.T) {
+	for _, phone := range []string{"+7 (900) 123-45-67", "8 900 123 45 67", "79001234567", "900 123-45-67"} {
+		if !russianPhone(phone) {
+			t.Errorf("russianPhone(%q) = false", phone)
 		}
 	}
 }

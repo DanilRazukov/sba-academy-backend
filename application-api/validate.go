@@ -9,9 +9,8 @@ import (
 
 // Проверка полей повторяет фронт: src/features/submit-application/model/validate.ts,
 // тексты — formContent.validation. Менять вместе: форма показывает fieldErrors
-// сервера как есть. Исключение — почта: на сервере она строже (RFC 5322 через
-// net/mail), редкие ошибки вроде «anna..petrova@mail.ru» фронт пропускает, и
-// пользователь видит тот же текст ошибки после отправки.
+// сервера как есть. Почта: здесь — net/mail (RFC 5322), на фронте — та же
+// логика без библиотек (isValidEmail); телефон — только российский (+7).
 
 // applicationFields — поля заявки, контракт ApplicationFields (src/shared/api/application.types.ts).
 type applicationFields struct {
@@ -65,10 +64,8 @@ func validateFields(f applicationFields) map[string]string {
 		errs["phone"] = "Укажите телефон"
 	case !phonePattern.MatchString(f.Phone):
 		errs["phone"] = "В номере могут быть только цифры, +, пробелы, скобки и дефис"
-	default:
-		if d := countDigits(f.Phone); d < 10 || d > 15 {
-			errs["phone"] = "Проверьте номер: в нём должно быть от 10 до 15 цифр"
-		}
+	case !russianPhone(f.Phone):
+		errs["phone"] = "Нужен российский номер: +7 и ещё 10 цифр"
 	}
 
 	switch {
@@ -96,12 +93,23 @@ func validEmail(s string) bool {
 	return dot > at+1 && utf8.RuneCountInString(s[dot+1:]) >= 2
 }
 
-func countDigits(s string) int {
-	n := 0
+// russianPhone — только российские номера (решение заказчика 2026-11-13):
+// 11 цифр с 7 или 8 в начале («+7 (900) 123-45-67», «8 900 …») или 10 цифр
+// без кода страны («900 123-45-67»). Номер с «+» — только 11 цифр: иначе
+// недописанный номер из маски сайта («+7 (900) 123-45-6») сошёл бы за
+// «10 цифр без кода». Форма на сайте сама приводит ввод к +7.
+func russianPhone(s string) bool {
+	var digits []rune
 	for _, r := range s {
 		if r >= '0' && r <= '9' {
-			n++
+			digits = append(digits, r)
 		}
 	}
-	return n
+	switch len(digits) {
+	case 10:
+		return !strings.HasPrefix(s, "+")
+	case 11:
+		return digits[0] == '7' || digits[0] == '8'
+	}
+	return false
 }
