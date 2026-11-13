@@ -43,10 +43,10 @@ type Course struct {
 
 // Courses — каталог программ по id.
 var Courses = map[string]Course{
-	"ecosystem-basics": {Title: "Основы экосистемы", Kind: "Базовый курс", Price: 15000},
-	"crypto-assets":    {Title: "Криптовалюта и виртуальные активы", Kind: "Флагманский курс", Price: 30000},
+	"ecosystem-basics": {Title: "Основы экосистемы", Kind: "Вводный курс", Price: 15000},
+	"crypto-assets":    {Title: "Криптовалюта и виртуальные активы", Kind: "Основной курс", Price: 30000},
 	"tokenomics":       {Title: "Токеномика без иллюзий", Kind: "Специализация", Price: 15000},
-	"partner-programs": {Title: "Партнёрские программы", Kind: "Бизнес-курс", Price: 20000},
+	"partner-programs": {Title: "Партнёрские программы", Kind: "Для бизнеса", Price: 20000},
 }
 
 // Message — готовое письмо. Отправитель кладёт HTML и Text в
@@ -81,7 +81,7 @@ type view struct {
 	Phone       string
 	Email       string
 	CourseTitle string
-	CourseMeta  string // «Флагманский курс · 30 000 ₽»
+	CourseMeta  string // «Основной курс · 30 000 ₽»
 	ReceivedAt  string // «28 октября 2026, 14:05 МСК»
 	Preheader   string // строка-превью в списке писем
 	// ссылки собраны и экранированы в Go: html/template сам не пропускает

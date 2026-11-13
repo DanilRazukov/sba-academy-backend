@@ -33,7 +33,7 @@ func TestTelegramHTML(t *testing.T) {
 	text := telegramHTML(sampleApp)
 	for _, want := range []string{
 		"🆕 <b>Новая заявка</b>  ·  A-261028-3f9a1c",
-		"📚 <b>Криптовалюта и виртуальные активы</b>\nФлагманский курс · " + appmail.FormatPrice(30000),
+		"📚 <b>Криптовалюта и виртуальные активы</b>\nОсновной курс · " + appmail.FormatPrice(30000),
 		"👤 Анна Комарова",
 		"📞 <code>+7 (900) 123-45-67</code>",
 		"✉️ anna@mail.ru",

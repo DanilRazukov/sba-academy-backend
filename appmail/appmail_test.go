@@ -33,7 +33,7 @@ func TestRender(t *testing.T) {
 		`href="tel:&#43;79001234567"`, // «+» в атрибуте html/template пишет сущностью
 		`href="mailto:anna@mail.ru?subject=`,
 		"28 октября 2026, 14:05 МСК",
-		"Флагманский курс · 30 000 ₽",
+		"Основной курс · 30 000 ₽",
 		"№&nbsp;A-1042",
 	} {
 		if !strings.Contains(msg.HTML, want) {
