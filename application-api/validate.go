@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net/mail"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -8,7 +9,9 @@ import (
 
 // Проверка полей повторяет фронт: src/features/submit-application/model/validate.ts,
 // тексты — formContent.validation. Менять вместе: форма показывает fieldErrors
-// сервера как есть.
+// сервера как есть. Исключение — почта: на сервере она строже (RFC 5322 через
+// net/mail), редкие ошибки вроде «anna..petrova@mail.ru» фронт пропускает, и
+// пользователь видит тот же текст ошибки после отправки.
 
 // applicationFields — поля заявки, контракт ApplicationFields (src/shared/api/application.types.ts).
 type applicationFields struct {
@@ -35,8 +38,6 @@ var (
 	namePattern = regexp.MustCompile(`^\p{L}[\p{L}\s\x{00A0}'’.-]*$`)
 	// цифры, плюс, пробелы, скобки и дефисы — как люди пишут номера
 	phonePattern = regexp.MustCompile(`^[+\d\s()-]+$`)
-	// без пробелов, одна «@», точка в домене и зона от двух символов
-	emailPattern = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]{2,}$`)
 )
 
 // validateFields возвращает тексты ошибок по полям; пустая мапа — всё верно.
@@ -73,11 +74,26 @@ func validateFields(f applicationFields) map[string]string {
 	switch {
 	case f.Email == "":
 		errs["email"] = "Укажите электронную почту"
-	case utf8.RuneCountInString(f.Email) > 254 || !emailPattern.MatchString(f.Email):
+	case utf8.RuneCountInString(f.Email) > 254 || !validEmail(f.Email):
 		errs["email"] = "Проверьте адрес: например, name@example.com"
 	}
 
 	return errs
+}
+
+// validEmail — адрес по RFC 5322 (net/mail.ParseAddress), но только голый:
+// ParseAddress принимает и «Анна <anna@mail.ru>», и комментарии в скобках —
+// поэтому разобранный адрес должен совпасть с введённой строкой целиком.
+// Сверху — то, что RFC разрешает, а для формы на сайте почти всегда опечатка:
+// домен без зоны («anna@mail») — нужны точка в домене и зона от двух символов.
+func validEmail(s string) bool {
+	addr, err := mail.ParseAddress(s)
+	if err != nil || addr.Name != "" || addr.Address != s {
+		return false
+	}
+	at := strings.LastIndex(s, "@")
+	dot := strings.LastIndex(s, ".")
+	return dot > at+1 && utf8.RuneCountInString(s[dot+1:]) >= 2
 }
 
 func countDigits(s string) int {

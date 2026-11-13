@@ -42,6 +42,15 @@ func TestValidateFields(t *testing.T) {
 		{"почта без зоны", func(f *applicationFields) { f.Email = "anna@mail" }, "email", "Проверьте адрес: например, name@example.com"},
 		{"две @", func(f *applicationFields) { f.Email = "a@b@mail.ru" }, "email", "Проверьте адрес: например, name@example.com"},
 		{"перевод строки в почте", func(f *applicationFields) { f.Email = "a@mail.ru\r\nBcc: x@y.z" }, "email", "Проверьте адрес: например, name@example.com"},
+		// ParseAddress это пропускает — отсекает validEmail
+		{"почта с именем", func(f *applicationFields) { f.Email = "Анна <anna@mail.ru>" }, "email", "Проверьте адрес: например, name@example.com"},
+		{"почта с комментарием", func(f *applicationFields) { f.Email = "anna@mail.ru (Анна)" }, "email", "Проверьте адрес: например, name@example.com"},
+		{"точка в конце домена", func(f *applicationFields) { f.Email = "anna@mail." }, "email", "Проверьте адрес: например, name@example.com"},
+		{"однобуквенная зона", func(f *applicationFields) { f.Email = "anna@mail.r" }, "email", "Проверьте адрес: например, name@example.com"},
+		// регулярка это пропускала — отсекает ParseAddress
+		{"две точки подряд", func(f *applicationFields) { f.Email = "anna..petrova@mail.ru" }, "email", "Проверьте адрес: например, name@example.com"},
+		{"точка перед @", func(f *applicationFields) { f.Email = "anna.@mail.ru" }, "email", "Проверьте адрес: например, name@example.com"},
+		{"скобка в адресе", func(f *applicationFields) { f.Email = "an<na@mail.ru" }, "email", "Проверьте адрес: например, name@example.com"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -55,6 +64,19 @@ func TestValidateFields(t *testing.T) {
 				t.Errorf("ожидалась одна ошибка, получено %v", errs)
 			}
 		})
+	}
+}
+
+func TestValidEmailAccepts(t *testing.T) {
+	for _, email := range []string{
+		"anna@mail.ru",
+		"anna.petrova+sba@gmail.com",
+		"a_b-c@sub.domain.co.uk",
+		"анна@почта.рф", // RFC 6532: кириллица в адресе
+	} {
+		if !validEmail(email) {
+			t.Errorf("validEmail(%q) = false", email)
+		}
 	}
 }
 
